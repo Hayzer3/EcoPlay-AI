@@ -1,0 +1,20 @@
+# Dataset images are kept locally and are never committed.
+/data/raw/
+/data/processed/
+
+# Trained artifacts can be large and are generated from the dataset.
+/models/
+/artifacts/
+*.h5
+*.keras
+*.onnx
+
+# Python and editor files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/
