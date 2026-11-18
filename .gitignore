@@ -18,3 +18,4 @@ venv/
 .mypy_cache/
 .idea/
 .vscode/
+/trashnet/
