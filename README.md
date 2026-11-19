@@ -64,7 +64,11 @@ O script grava em `models/`:
 - `metadata.json`: tamanho, normalização e ordem dos rótulos exigidos pela API.
 - `evaluation.json`: tamanhos dos conjuntos, acurácia, relatório por classe, matriz de confusão e, quando fornecidas, métricas das fotos reais.
 
-Esses artefatos são locais e ignorados pelo Git. A avaliação não gera números até o treino ser executado. A acurácia do TrashNet não deve ser apresentada como desempenho em fotos reais.
+`mobilenetv2.onnx` e `metadata.json` estão versionados no repositório para que a API consiga iniciar no deploy. O checkpoint PyTorch `mobilenetv2_best.pth` e o relatório completo `evaluation.json` são artefatos locais ignorados pelo Git.
+
+### Resultado registrado no conjunto de teste
+
+Na execução registrada, a divisão estratificada com semente 42 usou 1.769 imagens para treino, 379 para validação e 379 para teste. No teste reservado do TrashNet, o modelo obteve **90,24% de acurácia** e **90,01% de F1 macro**. Esses valores medem apenas imagens do TrashNet; não houve avaliação com fotos reais (`real_photos` não foi avaliado). O arquivo local `models/evaluation.json` contém o relatório por classe e a matriz de confusão. A acurácia do TrashNet não deve ser apresentada como desempenho em fotos reais.
 
 ## Executar a API
 
