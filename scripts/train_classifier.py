@@ -195,6 +195,11 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--learning-rate", type=float, default=0.0001)
     parser.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Evaluate and export an existing best checkpoint without training",
+    )
+    parser.add_argument(
         "--real-data",
         type=Path,
         help="Optional labeled real-photo ImageFolder root for separate evaluation",
@@ -214,37 +219,46 @@ def main() -> int:
         args.data, args.batch_size, args.workers
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = create_model(len(class_names), pretrained=not args.no_pretrained).to(device)
-    train_subset = train_loader.dataset
-    train_base = train_subset.dataset
-    training_labels = [
-        train_base.dataset.samples[index][1] for index in train_subset.indices
-    ]
-    class_counts = torch.bincount(
-        torch.tensor(training_labels), minlength=len(class_names)
-    ).float()
-    class_weights = len(training_labels) / (len(class_names) * class_counts)
-    loss_function = nn.CrossEntropyLoss(weight=class_weights.to(device))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    model = create_model(
+        len(class_names),
+        pretrained=not args.no_pretrained and not args.evaluate_only,
+    ).to(device)
     args.output.mkdir(parents=True, exist_ok=True)
     checkpoint_path = args.output / "mobilenetv2_best.pth"
 
-    best_validation_loss = float("inf")
-    for epoch in range(1, args.epochs + 1):
-        train_loss, train_accuracy = run_epoch(
-            model, train_loader, loss_function, device, optimizer
+    if not args.evaluate_only:
+        train_subset = train_loader.dataset
+        train_base = train_subset.dataset
+        training_labels = [
+            train_base.dataset.samples[index][1] for index in train_subset.indices
+        ]
+        class_counts = torch.bincount(
+            torch.tensor(training_labels), minlength=len(class_names)
+        ).float()
+        class_weights = len(training_labels) / (len(class_names) * class_counts)
+        loss_function = nn.CrossEntropyLoss(weight=class_weights.to(device))
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+        best_validation_loss = float("inf")
+        for epoch in range(1, args.epochs + 1):
+            train_loss, train_accuracy = run_epoch(
+                model, train_loader, loss_function, device, optimizer
+            )
+            validation_loss, validation_accuracy = run_epoch(
+                model, validation_loader, loss_function, device
+            )
+            print(
+                f"Epoch {epoch:02}/{args.epochs} | "
+                f"train loss={train_loss:.4f} acc={train_accuracy:.4f} | "
+                f"validation loss={validation_loss:.4f} acc={validation_accuracy:.4f}"
+            )
+            if validation_loss < best_validation_loss:
+                best_validation_loss = validation_loss
+                torch.save(model.state_dict(), checkpoint_path)
+
+    if not checkpoint_path.is_file():
+        parser.error(
+            f"Checkpoint not found: {checkpoint_path}. Run training before --evaluate-only."
         )
-        validation_loss, validation_accuracy = run_epoch(
-            model, validation_loader, loss_function, device
-        )
-        print(
-            f"Epoch {epoch:02}/{args.epochs} | "
-            f"train loss={train_loss:.4f} acc={train_accuracy:.4f} | "
-            f"validation loss={validation_loss:.4f} acc={validation_accuracy:.4f}"
-        )
-        if validation_loss < best_validation_loss:
-            best_validation_loss = validation_loss
-            torch.save(model.state_dict(), checkpoint_path)
 
     model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
     test_metrics = evaluate(model, test_loader, device, class_names)

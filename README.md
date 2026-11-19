@@ -5,7 +5,7 @@ Serviço de visão computacional para classificar imagens em seis categorias do 
 ## Fluxo implementado
 
 1. `notebooks/01_carregar_e_inspecionar_trashnet.ipynb` carrega o dataset local, confere rótulos e mostra amostras.
-2. `scripts/train_classifier.py` separa os dados de forma estratificada (70/15/15), ajusta uma MobileNetV2 pré-treinada, seleciona a melhor época pela perda de validação, mede o resultado no teste e exporta ONNX. O notebook `notebooks/02_treinar_e_avaliar_mobilenetv2.ipynb` conduz a execução no Colab.
+2. `scripts/train_classifier.py` separa os dados de forma estratificada (70/15/15), ajusta uma MobileNetV2 pré-treinada, seleciona a melhor época pela perda de validação, mede o resultado no teste e exporta ONNX. O notebook `notebooks/02_treinar_e_avaliar_mobilenetv2.ipynb` conduz a execução no Jupyter local.
 3. Opcionalmente, o mesmo script avalia fotos reais rotuladas à parte. As métricas reais não são misturadas às métricas do teste TrashNet.
 4. `service/app.py` carrega o ONNX e expõe `POST /classificar` e `GET /health`.
 
@@ -31,10 +31,21 @@ Fotos próprias rotuladas podem ser organizadas em `data/raw/real/<classe>/`. Pa
 
 ## Treinar e avaliar
 
-Use Colab com GPU ou Python 3.11/3.12 local. O ambiente local atual precisa de PyTorch, torchvision e ONNX, instalados a partir de `requirements-train.txt`.
+Jupyter local é suficiente; GPU é opcional. Python 3.11 ou 3.12 é recomendado. Crie um ambiente virtual para o treino, instale as dependências e registre um kernel Jupyter:
 
 ```powershell
+py -3.12 -m venv .venv-ml
+.\.venv-ml\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements-train.txt
+python -m ipykernel install --user --name ecoplay-ai --display-name "Python (EcoPlay AI)"
+```
+
+No VS Code/Jupyter, selecione o kernel **Python (EcoPlay AI)**, abra `notebooks/02_treinar_e_avaliar_mobilenetv2.ipynb` e execute as células em ordem. O notebook localiza a pasta do projeto e o dataset já extraído. Se a máquina tiver GPU compatível com CUDA, o script a utiliza; caso contrário, treina em CPU, o que pode demorar mais.
+
+O treino também pode ser iniciado sem notebook:
+
+```powershell
 python scripts/train_classifier.py --data "trashnet/dataset-resized/dataset-resized" --epochs 10
 ```
 
@@ -44,7 +55,7 @@ Para avaliar também fotos próprias:
 python scripts/train_classifier.py --data "trashnet/dataset-resized/dataset-resized" --real-data "data/raw/real" --epochs 10
 ```
 
-Em Colab, coloque o repositório em `MyDrive/EcoPlay/iot-ai` e o ZIP do TrashNet em `MyDrive/EcoPlay/trashnet.zip`, ou ajuste os caminhos na primeira célula de `notebooks/02_treinar_e_avaliar_mobilenetv2.ipynb`. Selecione um runtime com GPU e execute as células em ordem. O notebook copia o ZIP para o armazenamento temporário da sessão, localiza as seis classes e grava os artefatos em `models/` no Drive. Os pesos ImageNet pré-treinados são baixados na primeira execução.
+Na primeira execução, os pesos ImageNet pré-treinados são baixados. A pasta local `trashnet/` deve estar disponível para o treino.
 
 O script grava em `models/`:
 
