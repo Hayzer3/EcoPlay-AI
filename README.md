@@ -1,64 +1,82 @@
-# EcoPlay — visão computacional
+# EcoPlay — classificação de resíduos
 
-Esta pasta é o serviço de IA do EcoPlay. Vamos desenvolvê-lo em etapas para que você consiga acompanhar o caminho dos dados até a classificação.
+Serviço de visão computacional para classificar imagens em seis categorias do TrashNet: `cardboard`, `glass`, `metal`, `paper`, `plastic` e `trash`.
 
-## Plano de trabalho
+## Fluxo implementado
 
-1. Conferir e organizar o dataset.
-2. Preparar treino, validação e teste sem misturar as imagens entre conjuntos.
-3. Treinar a MobileNetV2 com Transfer Learning no Colab.
-4. Avaliar o modelo no conjunto TrashNet e em fotos reais, separadamente.
-5. Exportar o modelo treinado para ONNX.
-6. Servir a classificação pelo FastAPI em `POST /classificar`.
+1. `notebooks/01_carregar_e_inspecionar_trashnet.ipynb` carrega o dataset local, confere rótulos e mostra amostras.
+2. `scripts/train_classifier.py` separa os dados de forma estratificada (70/15/15), ajusta uma MobileNetV2 pré-treinada, seleciona a melhor época pela perda de validação, mede o resultado no teste e exporta ONNX. O notebook `notebooks/02_treinar_e_avaliar_mobilenetv2.ipynb` conduz a execução no Colab.
+3. Opcionalmente, o mesmo script avalia fotos reais rotuladas à parte. As métricas reais não são misturadas às métricas do teste TrashNet.
+4. `service/app.py` carrega o ONNX e expõe `POST /classificar` e `GET /health`.
 
-Neste primeiro passo, só estamos definindo a estrutura esperada dos dados e um script para contar as imagens. Ainda não há modelo nem métricas.
+O modelo generativo usado para orientar o descarte pertence à integração Spring AI do projeto Java. Este serviço Python cuida da classificação visual e não substitui essa etapa generativa.
 
-## Classes e pastas
+## Dataset
 
-Coloque as imagens localmente neste formato:
+O TrashNet local deve ter uma pasta por classe:
 
 ```text
-data/raw/
-├── trashnet/
-│   ├── cardboard/
-│   ├── glass/
-│   ├── metal/
-│   ├── paper/
-│   ├── plastic/
-│   └── trash/
-└── real/
-    ├── cardboard/
-    ├── glass/
-    ├── metal/
-    ├── paper/
-    ├── plastic/
-    └── trash/
+trashnet/dataset-resized/dataset-resized/
+├── cardboard/
+├── glass/
+├── metal/
+├── paper/
+├── plastic/
+└── trash/
 ```
 
-`trashnet` contém as imagens do TrashNet; `real` contém as fotos próprias da equipe. As pastas usam os nomes originais das classes para evitar ambiguidades no carregamento.
+A pasta `trashnet/` é ignorada pelo Git. O conjunto atual contém 2.527 imagens. Não envie imagens ou fotos pessoais ao repositório.
 
-Meta do planejamento: 20–30 fotos reais por classe. O inspetor mostra as quantidades, mas não inventa dados nem considera que a meta foi alcançada.
+Fotos próprias rotuladas podem ser organizadas em `data/raw/real/<classe>/`. Para a avaliação separada, todas as seis subpastas precisam existir e seus nomes devem corresponder às classes do TrashNet. A meta sugerida é reunir 20–30 imagens reais por classe; resultados com amostras pequenas devem ser interpretados com cautela.
 
-## Conferir o dataset
+## Treinar e avaliar
 
-Com Python 3.10 ou superior, na pasta `iot-ai`:
+Use Colab com GPU ou Python 3.11/3.12 local. O ambiente local atual precisa de PyTorch, torchvision e ONNX, instalados a partir de `requirements-train.txt`.
 
 ```powershell
-python scripts/inspect_dataset.py
+python -m pip install -r requirements-train.txt
+python scripts/train_classifier.py --data "trashnet/dataset-resized/dataset-resized" --epochs 10
 ```
 
-Para conferir outro local:
+Para avaliar também fotos próprias:
 
 ```powershell
-python scripts/inspect_dataset.py --root "D:\dados\ecoplay"
+python scripts/train_classifier.py --data "trashnet/dataset-resized/dataset-resized" --real-data "data/raw/real" --epochs 10
 ```
 
-O script usa apenas a biblioteca padrão do Python. Ele lista a quantidade de arquivos de imagem por classe e aponta pastas que ainda não existem.
+Em Colab, coloque o repositório em `MyDrive/EcoPlay/iot-ai` e o ZIP do TrashNet em `MyDrive/EcoPlay/trashnet.zip`, ou ajuste os caminhos na primeira célula de `notebooks/02_treinar_e_avaliar_mobilenetv2.ipynb`. Selecione um runtime com GPU e execute as células em ordem. O notebook copia o ZIP para o armazenamento temporário da sessão, localiza as seis classes e grava os artefatos em `models/` no Drive. Os pesos ImageNet pré-treinados são baixados na primeira execução.
 
-## Cuidados com os dados
+O script grava em `models/`:
 
-- Não envie fotos, datasets ou pesos do modelo para o Git. `.gitignore` já exclui esses artefatos.
-- Nas fotos reais, prefira embalagens isoladas em diferentes fundos e condições de luz.
-- Evite rostos, documentos, placas, endereços ou qualquer dado pessoal nas fotos.
-- Não copie a mesma foto para mais de um conjunto quando fizermos a divisão de treino, validação e teste.
-- Métricas só serão registradas depois de treinar e avaliar o modelo com dados identificados.
+- `mobilenetv2_best.pth`: pesos PyTorch da melhor época de validação.
+- `mobilenetv2.onnx`: modelo para inferência.
+- `metadata.json`: tamanho, normalização e ordem dos rótulos exigidos pela API.
+- `evaluation.json`: tamanhos dos conjuntos, acurácia, relatório por classe, matriz de confusão e, quando fornecidas, métricas das fotos reais.
+
+Esses artefatos são locais e ignorados pelo Git. A avaliação não gera números até o treino ser executado. A acurácia do TrashNet não deve ser apresentada como desempenho em fotos reais.
+
+## Executar a API
+
+Instale as dependências do serviço e inicie o servidor a partir da pasta `iot-ai`:
+
+```powershell
+python -m pip install -r requirements-service.txt
+uvicorn service.app:app --reload
+```
+
+Documentação interativa: `http://127.0.0.1:8000/docs`.
+
+O endpoint recebe uma imagem multipart no campo `image`:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/classificar" -F "image=@foto.jpg"
+```
+
+O JSON de resposta contém a `classe` prevista, `confianca` dessa classe e `probabilidades` para as seis classes. Esses valores são calculados pelo modelo em cada chamada. `confianca` é uma estimativa, não uma garantia de acerto. O modelo só escolhe entre as seis classes conhecidas e não tem classe explícita para objetos fora delas. Use `GET /health` para conferir se os artefatos foram carregados.
+
+## Limitações e uso responsável
+
+- O TrashNet contém imagens em cenários controlados; iluminação, fundo, sujeira, objetos compostos e ângulos diferentes podem reduzir o desempenho no uso real.
+- A categoria prevista representa o rótulo visual do dataset, não regras locais de coleta seletiva. A orientação de descarte deve considerar contexto geográfico e regras municipais.
+- A avaliação em fotos próprias precisa usar exemplos separados do treino e rótulos revisados por pessoas.
+- Não envie fotos com rostos, documentos, placas, endereços ou outros dados pessoais.
